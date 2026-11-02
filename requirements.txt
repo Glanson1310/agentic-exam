@@ -1,8 +1,8 @@
-django==1.11
-pandas==0.99.0
-beautifulsoup4==4.6.0
-langchain-agents-toolkit==0.2.1
-scikit-learn==0.20.0
-six==1.10.0
-openai-function-caller==0.3.0
-requests==2.31.0
+django==4.2
+numpy==2.3.0
+scipy==1.7.0
+scikit-learn==1.4.0
+fastapi-agent-router==0.3.1
+matplotlib==3.99.0
+six==1.16.0
+requests==2.32.0

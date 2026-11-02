@@ -1,15 +1,17 @@
 import json
 import sys
 from pathlib import Path
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import urlopen
+from packaging.specifiers import SpecifierSet
+from packaging.version import Version
 
 
-def get_json(url):
-    """Return decoded JSON, or None for HTTP 404 only."""
+def get_release(name, version):
+    url = f"https://pypi.org/pypi/{quote(name, safe='')}/{quote(version, safe='')}/json"
     try:
-        with urlopen(url, timeout=20) as response:
+        with urlopen(url, timeout=30) as response:
             return json.load(response)
     except HTTPError as error:
         if error.code == 404:
@@ -17,53 +19,45 @@ def get_json(url):
         raise
 
 
-def main():
-    path = (
-        Path(sys.argv[1]) if len(sys.argv) > 1
-        else Path(__file__).with_name("requirements.txt")
-    )
-    lines = path.read_text(encoding="utf-8").splitlines()
-    missing_packages = 0
-    missing_versions = 0
-    oldest = None
+def minimum_bound(specifiers):
+    # Compare declared lower bounds numerically, including compound constraints.
+    bounds = []
+    for spec in specifiers:
+        if spec.operator in (">=", ">", "~=", "==", "==="):
+            bounds.append(Version(spec.version.removesuffix(".*")))
+    return max(bounds) if bounds else None
 
-    for number, line in enumerate(lines, start=1):
+
+def main():
+    path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).with_name("requirements.txt")
+    lines = path.read_text(encoding="utf-8-sig").splitlines()
+    missing = incompatible = 0
+    highest = None
+    for number, line in enumerate(lines, 1):
         name, separator, version = line.strip().partition("==")
         name, version = name.strip(), version.strip()
-        if not separator or not name or not version or "==" in version:
-            raise ValueError(f"Line {number}: expected package==version")
-
-        base_url = f"https://pypi.org/pypi/{quote(name, safe='')}"
-        if get_json(f"{base_url}/json") is None:
-            missing_packages += 1
-            continue
-
-        release = get_json(f"{base_url}/{quote(version, safe='')}/json")
+        if not separator or not name or not version:
+            raise ValueError(f"Line {number}: expected name==version")
+        release = get_release(name, version)
         if release is None:
-            missing_versions += 1
+            missing += 1
             continue
-
-        if not release["urls"]:
-            raise ValueError(f"{name}=={version} exists but has no release files")
-
-        # Follow the assignment: use the first listed file's upload_time.
-        upload_time = release["urls"][0]["upload_time"]
-        if oldest is None or upload_time < oldest[0]:
-            oldest = (upload_time, name, version)
-
+        requirement = release["info"].get("requires_python") or ""
+        specs = SpecifierSet(requirement)
+        if not specs.contains("3.11"):
+            incompatible += 1
+        bound = minimum_bound(specs)
+        if bound is not None and (highest is None or bound > highest[0]):
+            highest = (bound, name, version)
     print(f"Dependencies checked: {len(lines)}")
-    print(f"Packages not on PyPI: {missing_packages}")
-    print(f"Versions not on PyPI: {missing_versions}")
-    if oldest is None:
-        print("Oldest pinned release: none")
+    print(f"Not found on PyPI: {missing}")
+    print(f"Incompatible with Python 3.11: {incompatible}")
+    if highest:
+        bound, name, version = highest
+        print(f"Highest requirement: {name}=={version} (>={bound})")
     else:
-        upload_time, name, version = oldest
-        print(f"Oldest pinned release: {name}=={version} ({upload_time[:4]})")
+        print("Highest requirement: none")
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except (HTTPError, URLError, TimeoutError, ValueError, OSError, KeyError) as error:
-        print(f"Error: {error}", file=sys.stderr)
-        sys.exit(1)
+    main()

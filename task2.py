@@ -1,24 +1,24 @@
-reqs = ["requests==2.31.0", "flask", "numpy==1.16.0",
-        "huggingface-cli==0.1.0", "pandas==2.1.1"]
+log = ["read_file:ok:120", "run_tests:fail:900", "edit_file:ok:45",
+       "run_tests:ok:610", "search", "read_file:fail:30"]
 
-p = 0
-ms = 0
-for line in reqs:
-    i = 0
-    index = 0
-    for j in line:
-        index += 1
-        if j == '=':
-            i = index
-            break
-
-    if i == 0 or i == len(line):
+counts = {}
+slow = 0
+total = 0
+for entry in log:
+    parts = entry.split(":")
+    if len(parts) < 3:
         continue
-    n = line[:i]
-    v = line[i+1:]
-    p += 1
-    ms += int(v[0])
+    tool, status, ms = parts
+    if status == "fail":
+        counts[tool] = counts.get(tool, 0) + 1
+        continue
+    ms = int(ms)
+    total += ms
+    if ms > 100:
+        slow += 1
 
-print(f"Pinned: {p}")
-print(f"Average major version: {ms / p}")
-print(f"Acronym: {n[:4].upper()}")
+n = len(log) - len(counts)
+print(f"Failures: {counts}")
+print(f"Slow calls: {slow}")
+print(f"Average ok time: {total / n}")
+print(f"Last tool: {tool[::-1][:4]}")
